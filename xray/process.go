@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -105,8 +106,15 @@ func (p *process) GetResult() string {
 	p.mutex.RLock()
 	exitErr := p.exitErr
 	p.mutex.RUnlock()
-	if p.lines.Empty() && exitErr != nil {
-		return exitErr.Error()
+	if p.lines.Empty() {
+		// 队列空时绝不能落到 TakeUntil：它在空队列上会永久阻塞（取第一个元素是阻塞 Get），
+		// 而调用方 GetXrayResult 持有 xrayLock 写锁，一旦卡在这里，
+		// 每 10 秒一次的 RestartXray 与 /server/status 会一起被拖死，
+		// 面板表现为"xray 状态永远转圈、重启无反应"。
+		if exitErr != nil {
+			return exitErr.Error()
+		}
+		return ""
 	}
 	items, _ := p.lines.TakeUntil(func(item interface{}) bool {
 		return true
@@ -186,6 +194,13 @@ func (p *process) Start() (err error) {
 		return common.NewErrorf("生成 xray 配置文件失败: %v", err)
 	}
 	configPath := GetConfigPath()
+	// bin 目录不一定存在：首次部署、或从别的工作目录启动时，
+	// 直接 WriteFile 只会得到 "open bin/config.json: The system cannot find the path specified"，
+	// 让人以为配置内容有问题，实际只是目录没建。
+	err = os.MkdirAll(filepath.Dir(configPath), fs.ModePerm)
+	if err != nil {
+		return common.NewErrorf("创建 xray 配置目录失败: %v", err)
+	}
 	err = os.WriteFile(configPath, data, fs.ModePerm)
 	if err != nil {
 		return common.NewErrorf("写入配置文件失败: %v", err)
