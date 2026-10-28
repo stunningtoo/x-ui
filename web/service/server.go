@@ -88,6 +88,25 @@ type ServerService struct {
 	xrayService XrayService
 }
 
+// netRate 把两次网卡计数器的差值折算成每秒速率。
+// 直接相减是不够的：
+//   - 计数器会回退（网卡重置、驱动重载、休眠唤醒后清零），uint64 相减会下溢成
+//     1.8e19，面板上直接显示"每秒 16 EB"；
+//   - 两次采样间隔可能为 0 甚至负数（系统时钟被校正），除零得到 +Inf 或 NaN，
+//     转 uint64 是未定义结果。
+// 两种异常都返回 0，界面上表现为"这一秒没有速率"，而不是崩掉或爆表。
+func netRate(cur uint64, last uint64, duration time.Duration) uint64 {
+	if duration <= 0 || cur < last {
+		return 0
+	}
+	seconds := float64(duration) / float64(time.Second)
+	rate := float64(cur-last) / seconds
+	if rate <= 0 || rate > 1e15 {
+		return 0
+	}
+	return uint64(rate)
+}
+
 func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 	now := time.Now()
 	status := &Status{
@@ -149,11 +168,8 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 
 		if lastStatus != nil {
 			duration := now.Sub(lastStatus.T)
-			seconds := float64(duration) / float64(time.Second)
-			up := uint64(float64(status.NetTraffic.Sent-lastStatus.NetTraffic.Sent) / seconds)
-			down := uint64(float64(status.NetTraffic.Recv-lastStatus.NetTraffic.Recv) / seconds)
-			status.NetIO.Up = up
-			status.NetIO.Down = down
+			status.NetIO.Up = netRate(status.NetTraffic.Sent, lastStatus.NetTraffic.Sent, duration)
+			status.NetIO.Down = netRate(status.NetTraffic.Recv, lastStatus.NetTraffic.Recv, duration)
 		}
 	} else {
 		logger.Warning("can not find io counters")

@@ -29,6 +29,15 @@ func newTestServer(t *testing.T) *Server {
 	if err := database.InitDB(dbPath); err != nil {
 		t.Fatalf("init test db failed: %v", err)
 	}
+	// 必须在 TempDir 清理之前关库，否则 Windows 上句柄未释放，
+	// t.TempDir() 的 RemoveAll 报 "The process cannot access the file"，
+	// 测试本身没问题却整包失败。t.Cleanup 是后进先出，这里注册得比 TempDir 晚，
+	// 所以会先执行。
+	t.Cleanup(func() {
+		if err := database.CloseDB(); err != nil {
+			t.Logf("close test db failed: %v", err)
+		}
+	})
 	s := NewServer()
 	// main.go 在 server.Start() 之前会 global.SetWebServer(server)：
 	// initRouter -> NewServerController -> startTask 会通过全局取 cron，

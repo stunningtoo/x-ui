@@ -114,6 +114,22 @@ func GetDB() *gorm.DB {
 	return db
 }
 
+// CloseDB 关闭底层连接池并清空全局句柄。
+// 主程序不需要调用（进程退出时由 OS 回收），但测试必须显式关闭：
+// Windows 上只要还有打开的 sqlite 文件句柄，t.TempDir() 的清理就删不掉 .db，
+// 整个测试包以 "The process cannot access the file ... another process" 失败。
+func CloseDB() error {
+	if db == nil {
+		return nil
+	}
+	sqlDB, err := db.DB()
+	db = nil
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}
+
 // IsNotFound 判断记录是否不存在。用 errors.Is 而不是 == 比较：
 // gorm 可能把 ErrRecordNotFound 包装后再返回，值比较会漏判，
 // 而调用方（getString 的默认值兜底、saveSetting 的建记录分支、

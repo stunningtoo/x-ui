@@ -386,7 +386,13 @@ func (s *Server) Stop() error {
 	var err1 error
 	var err2 error
 	if s.httpServer != nil {
-		err1 = s.httpServer.Shutdown(s.ctx)
+		// 不能拿 s.ctx 去 Shutdown：上面已经 s.cancel()，它此刻是已取消的上下文，
+		// Shutdown 会立刻返回 context.Canceled 并不再等待在途请求，
+		// SIGHUP 重启时正在保存设置/拉状态的请求就被硬断在半路。
+		// 用一个独立的超时上下文收尾，让在途请求有机会写完响应。
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err1 = s.httpServer.Shutdown(shutdownCtx)
+		shutdownCancel()
 	}
 	if s.listener != nil {
 		err2 = s.listener.Close()

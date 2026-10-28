@@ -73,6 +73,11 @@ func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 
 	db := database.GetDB()
 	tx := db.Begin()
+	if tx.Error != nil {
+		// Begin 失败时 tx 上的后续操作虽然也会带错返回，但直接判掉更明确，
+		// 也避免把"事务根本没开起来"当成普通的保存失败来排查。
+		return tx.Error
+	}
 	var err error
 	defer func() {
 		if err == nil {
