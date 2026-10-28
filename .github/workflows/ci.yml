@@ -28,6 +28,29 @@ jobs:
       - name: go test
         run: go test ./database/model/... ./web/service/... ./web/
 
+  # Windows 上一直没人编译过：sys.GetTCPCount/GetUDPCount 只有 linux/darwin 实现，
+  # 而且面板启动时 time.LoadLocation 需要系统 tzdata（Windows 默认没有），
+  # 这两个问题都要到用户在 Windows 上跑起来才炸。这里只做编译级检查，
+  # 测试仍放在 Linux 跑（web 包测试需要 cgo + sqlite，跑测试另行维护）。
+  windows-build:
+    name: windows go build
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+      - name: go build
+        run: go build ./...
+      - name: go vet
+        run: go vet ./...
+      # 纯 Go 的测试在 Windows 上也能跑，顺手把 xray 日志队列的行为钉住
+      - name: go test (pure go)
+        run: go test ./database/model/ ./xray/ ./util/...
+
   race:
     name: go test -race
     runs-on: ubuntu-24.04

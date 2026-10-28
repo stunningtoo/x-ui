@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	_ "time/tzdata"
 	_ "unsafe"
 	"x-ui/config"
 	"x-ui/database"
